@@ -1,3 +1,24 @@
+Metadata-Version: 2.4
+Name: langchain-sequential-thinking-tool
+Version: 0.1.0
+Summary: A LangChain tool implementing sequential thinking logic based on MCP.
+Author-email: Your Name <you@example.com>
+Project-URL: Homepage, https://github.com/your-repo/langchain-sequential-thinking-tool
+Project-URL: Bug Tracker, https://github.com/your-repo/langchain-sequential-thinking-tool/issues
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Intended Audience :: Developers
+Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: langchain-core>=0.1.0
+Requires-Dist: pydantic>=2.0
+Requires-Dist: rich
+Dynamic: license-file
+
 # LangChain Sequential Thinking Tool
 
 [![PyPI version](https://badge.fury.io/py/langchain-sequential-thinking-tool.svg)](https://badge.fury.io/py/langchain-sequential-thinking-tool) <!-- Placeholder, update after first publish -->
