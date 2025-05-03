@@ -6,25 +6,31 @@ build-backend = "setuptools.build_meta"
 name = "langchain-sequential-thinking-tool"
 version = "0.1.0"
 authors = [
-  { name="Your Name", email="you@example.com" }, # Replace with actual author info later
+  { name="cognitive-glitch", email="intuitionwith@gmail.com" },
 ]
 description = "A LangChain tool implementing sequential thinking logic based on MCP."
 readme = "README.md"
 requires-python = ">=3.8"
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License", # Assuming MIT, adjust if needed
+    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Intended Audience :: Developers",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-    "langchain-core>=0.1.0",
+    "langchain-core>=0.1",
     "pydantic>=2.0",
-    "rich", # For nice console output, matching the TS version's use of chalk
+    "rich",
+]
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.5",
+    "build>=1.2.2",
+    "twine>=6.1.0",
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/your-repo/langchain-sequential-thinking-tool" # Replace later
-"Bug Tracker" = "https://github.com/your-repo/langchain-sequential-thinking-tool/issues" # Replace later
+"Homepage" = "https://github.com/cognitive-glitch/langchain-sequential-thinking-tool"
+"Bug Tracker" = "https://github.com/cognitive-glitch/langchain-sequential-thinking-tool/issues"

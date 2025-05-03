@@ -41,6 +41,9 @@ def main():
         "branch1" in result2["branches"], True, "branch1 should be in branches"
     )
     branch_history = tool.get_branch("branch1")
+    if branch_history is None:
+        raise AssertionError("branch history should not be None")
+
     assert_equal(len(branch_history), 1, "branch history length should be 1")
     assert_equal(
         branch_history[0]["thought"],
