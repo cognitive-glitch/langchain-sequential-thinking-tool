@@ -94,10 +94,18 @@ The tool receives a dictionary matching the `ThoughtDataInput` schema. It valida
 4.  Install dependencies: `pip install -e ".[dev]"` (Assuming a `[project.optional-dependencies]` section for dev tools like `pytest`, `build`, `twine` is added to `pyproject.toml`)
 5.  Run tests: `pytest`
 
+## Publishing to PyPI
+
+This project uses [GitHub Actions with OIDC](https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/configuring-openid-connect-in-cloud-providers) for trusted publishing to the Python Package Index (PyPI).
+
+The publishing process is defined in the `.github/workflows/publish-to-pypi.yml` workflow file. Creating a new [GitHub release](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository) will automatically trigger this workflow, building the package and uploading it to PyPI.
+
+For more details on how trusted publishing works, refer to the [PyPI documentation on trusted publishers](https://docs.pypi.org/trusted-publishers/).
+
 ## Contributing
 
 Contributions are welcome! Please open an issue or submit a pull request.
 
 ## License
 
-[MIT License](LICENSE) <!-- Make sure to add a LICENSE file -->
+[MIT License](LICENSE)

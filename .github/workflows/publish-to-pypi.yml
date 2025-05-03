@@ -1,0 +1,42 @@
+# GitHub Actions workflow for publishing the sequential_thinking_tool package to PyPI
+# This workflow uses OpenID Connect (OIDC) for trusted publishing, avoiding the need for API tokens.
+
+name: Publish Python Package to PyPI
+
+on:
+  release:
+    types: [published] # Trigger the workflow only when a new release is published
+
+permissions:
+  id-token: write # Grant permission for the workflow to request an OpenID Connect token
+
+jobs:
+  publish-to-pypi:
+    name: Build and publish Python distribution to PyPI
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi # Optional: Define an environment for PyPI publishing if needed for protection rules
+      url: https://pypi.org/p/langchain-sequential-thinking-tool # URL to the package on PyPI (update if package name changes)
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        # No need to fetch tags explicitly, as the 'release' event context provides the tag ref
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x" # Use a recent Python 3 version
+
+      - name: Install build dependencies
+        run: python -m pip install build --user
+
+      - name: Build package
+        run: python -m build
+        # This command builds the source distribution (sdist) and wheel distribution (bdist_wheel)
+        # based on the configuration in pyproject.toml
+
+      - name: Publish package distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        # This action handles the OIDC authentication and publishing automatically
+        # It will look for the built distributions in the 'dist/' directory
+        # No API token or password configuration is needed due to trusted publishing setup
