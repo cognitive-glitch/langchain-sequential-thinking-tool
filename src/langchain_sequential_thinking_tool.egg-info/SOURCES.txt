@@ -1,8 +1,0 @@
-LICENSE
-README.md
-pyproject.toml
-src/langchain_sequential_thinking_tool.egg-info/PKG-INFO
-src/langchain_sequential_thinking_tool.egg-info/SOURCES.txt
-src/langchain_sequential_thinking_tool.egg-info/dependency_links.txt
-src/langchain_sequential_thinking_tool.egg-info/requires.txt
-src/langchain_sequential_thinking_tool.egg-info/top_level.txt
