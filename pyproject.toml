@@ -8,7 +8,7 @@ version = "0.1.0"
 authors = [
   { name="cognitive-glitch", email="intuitionwith@gmail.com" },
 ]
-description = "A LangChain tool implementing sequential thinking logic based on MCP."
+description = "A LangChain tool implementing sequential thinking logic for structured problem-solving with tools ."
 readme = "README.md"
 requires-python = ">=3.8"
 classifiers = [
