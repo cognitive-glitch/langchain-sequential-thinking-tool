@@ -1,5 +1,6 @@
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field, field_validator
+# Import ValidationInfo
+from pydantic import BaseModel, Field, field_validator, ValidationInfo
 
 class ToolRecommendation(BaseModel):
     """Represents a recommendation for using a specific tool."""
@@ -38,23 +39,27 @@ class ThoughtDataInput(BaseModel):
     previous_steps: Optional[List[StepRecommendation]] = Field(None, description="Steps already recommended")
     remaining_steps: Optional[List[str]] = Field(None, description="High-level descriptions of upcoming steps")
 
+    # Updated validator using Pydantic v2 style
     @field_validator('revises_thought')
-    def check_revises_thought(cls, v, values):
-        # Pydantic v2 uses model_dump() or model_fields_set, but validator context might differ.
-        # Let's try accessing data directly if available, otherwise fallback might be needed.
-        data = values.data if hasattr(values, 'data') else values # Adjust based on actual validator context if needed
-        if data.get('is_revision') and v is None:
+    @classmethod
+    def check_revises_thought(cls, v: Optional[int], info: ValidationInfo) -> Optional[int]:
+        # Access other fields via info.data
+        is_revision = info.data.get('is_revision')
+        if is_revision and v is None:
             raise ValueError('revises_thought must be provided if is_revision is True')
-        if not data.get('is_revision') and v is not None:
+        if not is_revision and v is not None:
             raise ValueError('revises_thought should only be provided if is_revision is True')
         return v
 
+    # Updated validator using Pydantic v2 style
     @field_validator('branch_id')
-    def check_branch_id(cls, v, values):
-        data = values.data if hasattr(values, 'data') else values
-        if data.get('branch_from_thought') and v is None:
+    @classmethod
+    def check_branch_id(cls, v: Optional[str], info: ValidationInfo) -> Optional[str]:
+        # Access other fields via info.data
+        branch_from_thought = info.data.get('branch_from_thought')
+        if branch_from_thought is not None and v is None:
             raise ValueError('branch_id must be provided if branch_from_thought is set')
-        if not data.get('branch_from_thought') and v is not None:
+        if branch_from_thought is None and v is not None:
             raise ValueError('branch_id should only be provided if branch_from_thought is set')
         return v
 

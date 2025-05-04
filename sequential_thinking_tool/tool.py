@@ -1,5 +1,6 @@
 import json
 import sys
+import threading # Added for Lock
 from typing import Any, Dict, List, Optional, Tuple, Type
 
 from langchain_core.callbacks import (
@@ -7,7 +8,7 @@ from langchain_core.callbacks import (
     CallbackManagerForToolRun,
 )
 from langchain_core.tools import BaseTool, ToolException
-from pydantic import Field
+from pydantic import Field, PrivateAttr # Added PrivateAttr
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
@@ -69,6 +70,17 @@ You should:
 class SequentialThinkingTool(BaseTool):
     """
     LangChain Tool for structured, sequential thinking and problem-solving.
+
+    Attributes:
+        name: The unique name of the tool.
+        description: A detailed description of the tool's purpose and usage.
+        args_schema: Pydantic model defining the input arguments.
+        return_direct: Whether the tool's output should be returned directly to the user.
+        console_kwargs: Dictionary of keyword arguments passed to the Rich Console constructor.
+                        Allows configuration like output file (e.g., `{'file': open('log.txt', 'w')}`).
+                        Defaults to stderr.
+        verbose: If True (default), use Rich formatting for console output.
+                 If False, print plain text output to the console's file handle.
     """
 
     name: str = "sequential_thinking_tool"
@@ -76,14 +88,43 @@ class SequentialThinkingTool(BaseTool):
     args_schema: Type[ThoughtDataInput] = ThoughtDataInput
     return_direct: bool = False  # Output should be processed by the agent
 
-    # Internal state (consider thread-safety if used concurrently)
-    thought_history: List[ThoughtData] = Field(default_factory=list)
-    branches: Dict[str, List[ThoughtData]] = Field(default_factory=dict)
-    console: Console = Field(default_factory=lambda: Console(stderr=True))
+    # --- Configurable Fields ---
+    console_kwargs: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Keyword arguments for Rich Console (e.g., file handle). Defaults to stderr.",
+    )
+    verbose: bool = Field(
+        default=True, description="Enable/disable rich TTY formatting."
+    )
 
-    class Config:
-        # Allow Console type which isn't directly serializable
-        arbitrary_types_allowed = True
+    # --- Internal State (Thread-Safe) ---
+    # Use PrivateAttr for internal state not part of the public API/config
+    _lock: threading.Lock = PrivateAttr(default_factory=threading.Lock)
+    _thought_history: List[ThoughtData] = PrivateAttr(default_factory=list)
+    _branches: Dict[str, List[ThoughtData]] = PrivateAttr(default_factory=dict)
+    _console: Console = PrivateAttr() # Initialized in model_post_init
+
+    # Allow Console type which isn't directly serializable by Pydantic V1
+    # For Pydantic V2, this is less critical but doesn't hurt.
+    model_config = {"arbitrary_types_allowed": True}
+
+    def model_post_init(self, __context: Any) -> None:
+        """Initialize the Rich Console after Pydantic validation."""
+        # Ensure console_kwargs is mutable if it came from default_factory
+        resolved_kwargs = self.console_kwargs.copy()
+        if "file" not in resolved_kwargs:
+            resolved_kwargs["file"] = sys.stderr
+        # Disable markup and highlighting if not verbose for simpler output
+        if not self.verbose:
+             resolved_kwargs["markup"] = False
+             resolved_kwargs["highlight"] = False
+             # Rich might still add some minimal ANSI codes even with no_color=True,
+             # so direct print might be cleaner for truly plain output if needed.
+             # However, using the console ensures output goes to the configured file.
+             # resolved_kwargs["no_color"] = True # Optional: further reduce formatting
+
+        self._console = Console(**resolved_kwargs)
+
 
     def _format_recommendation(self, step: StepRecommendation) -> Text:
         """Formats a StepRecommendation using Rich."""
@@ -153,80 +194,82 @@ class SequentialThinkingTool(BaseTool):
         run_manager: Optional[CallbackManagerForToolRun] = None,
         **kwargs: Any,
     ) -> Dict[str, Any]:
-        """Processes a single thought step."""
+        """Processes a single thought step (synchronously and thread-safe)."""
         try:
             # Validate input using the Pydantic model
             validated_input = ThoughtDataInput(**kwargs)
-            thought_data = ThoughtData(
-                **validated_input.model_dump()
-            )  # Convert to internal type
+            # Convert to internal type (which inherits from input type)
+            thought_data = ThoughtData(**validated_input.model_dump())
 
-            # Basic validation/adjustment
-            if thought_data.thought_number > thought_data.total_thoughts:
-                thought_data.total_thoughts = (
-                    thought_data.thought_number
-                )  # Adjust total if needed
+            # --- Thread-Safe State Update ---
+            with self._lock:
+                # Basic validation/adjustment
+                if thought_data.thought_number > thought_data.total_thoughts:
+                    thought_data.total_thoughts = thought_data.thought_number
 
-            # --- Internal State Management ---
-            # Accumulate previous steps if current step is provided
-            # Note: This state management is simple; complex scenarios might need more robust handling
-            if thought_data.current_step:
-                # Ensure previous_steps list exists
-                if (
-                    not isinstance(self.thought_history[-1].previous_steps, list)
-                    if self.thought_history
-                    else False
-                ):
-                    # If history exists and last entry has no list, create one
-                    if self.thought_history:
-                        self.thought_history[-1].previous_steps = []
-                    else:  # If no history, create list on current thought
-                        thought_data.previous_steps = []
+                # Accumulate previous steps if current step is provided
+                # This logic assumes previous_steps are built linearly in the main history
+                current_previous_steps = []
+                if self._thought_history:
+                    last_thought = self._thought_history[-1]
+                    if last_thought.previous_steps:
+                        current_previous_steps.extend(last_thought.previous_steps)
+                    # Add the last thought's *current* step to the *new* thought's previous_steps
+                    if last_thought.current_step:
+                         current_previous_steps.append(last_thought.current_step)
 
-                # Get the list to append to (either from history or current thought)
-                target_previous_steps = (
-                    self.thought_history[-1].previous_steps
-                    if self.thought_history
-                    and self.thought_history[-1].previous_steps is not None
-                    else thought_data.previous_steps
-                )
+                # Assign the accumulated steps to the current thought
+                thought_data.previous_steps = current_previous_steps
 
-                if (
-                    target_previous_steps is None
-                ):  # Should not happen due to above logic, but safeguard
-                    target_previous_steps = []
-                    if self.thought_history:
-                        self.thought_history[-1].previous_steps = target_previous_steps
-                    else:
-                        thought_data.previous_steps = target_previous_steps
+                # Add the fully processed thought to history
+                self._thought_history.append(thought_data)
 
-                target_previous_steps.append(thought_data.current_step)
-                # If we modified history, update the current thought_data to reflect it for the return value
-                if (
-                    self.thought_history
-                    and self.thought_history[-1].previous_steps is target_previous_steps
-                ):
-                    thought_data.previous_steps = target_previous_steps
+                # Handle branching
+                if thought_data.branch_from_thought and thought_data.branch_id:
+                    if thought_data.branch_id not in self._branches:
+                        self._branches[thought_data.branch_id] = []
+                    self._branches[thought_data.branch_id].append(thought_data)
 
-            self.thought_history.append(thought_data)
+                # Capture state for return value *after* updates
+                branches_keys = list(self._branches.keys())
+                history_len = len(self._thought_history)
 
-            if thought_data.branch_from_thought and thought_data.branch_id:
-                if thought_data.branch_id not in self.branches:
-                    self.branches[thought_data.branch_id] = []
-                self.branches[thought_data.branch_id].append(thought_data)
-            # --- End State Management ---
+            # --- End Thread-Safe State Update ---
 
-            # Print formatted thought to stderr for visibility
-            formatted_panel = self._format_thought(thought_data)
-            self.console.print(formatted_panel)
+
+            # --- Output ---
+            if self.verbose:
+                formatted_panel = self._format_thought(thought_data)
+                self._console.print(formatted_panel)
+            else:
+                # Simple text output to the configured file handle
+                output_lines = [
+                    f"--- Thought {thought_data.thought_number}/{thought_data.total_thoughts} ---",
+                    f"Thought: {thought_data.thought}",
+                ]
+                if thought_data.is_revision:
+                    output_lines[0] += f" (Revising: {thought_data.revises_thought})"
+                elif thought_data.branch_id:
+                     output_lines[0] += f" (Branch: {thought_data.branch_id} from {thought_data.branch_from_thought})"
+
+                if thought_data.current_step:
+                    output_lines.append(f"Recommendation: {thought_data.current_step.step_description}")
+                    output_lines.append(f"  Expected Outcome: {thought_data.current_step.expected_outcome}")
+                    # Add more details if needed for non-verbose
+
+                # Use console's file handle directly for output destination
+                output_str = "\n".join(output_lines)
+                print(output_str, file=self._console.file, flush=True) # Ensure output is written
+
+            # --- End Output ---
 
             # Return structured data for the agent
             return {
                 "thought_number": thought_data.thought_number,
                 "total_thoughts": thought_data.total_thoughts,
                 "next_thought_needed": thought_data.next_thought_needed,
-                "branches": list(self.branches.keys()),
-                "thought_history_length": len(self.thought_history),
+                "branches": branches_keys, # Use state captured after lock release
+                "thought_history_length": history_len, # Use state captured after lock release
                 # Pass back potentially updated step info
                 "current_step": (
                     thought_data.current_step.model_dump()
@@ -250,39 +293,51 @@ class SequentialThinkingTool(BaseTool):
         run_manager: Optional[AsyncCallbackManagerForToolRun] = None,
         **kwargs: Any,
     ) -> Dict[str, Any]:
-        """Processes a single thought step asynchronously."""
-        # Simple delegation for now, assuming _run is not I/O bound
-        # If _run involved heavy I/O, a true async implementation would be needed
-        try:
-            return self._run(
-                run_manager=run_manager.get_sync() if run_manager else None, **kwargs
-            )
-        except Exception as e:
-            raise ToolException(f"Error processing thought asynchronously: {e}") from e
-
-    def get_history(self) -> List[Dict[str, Any]]:
-        """Returns the full thought history."""
-        return [thought.model_dump() for thought in self.thought_history]
-
-    def get_branch(self, branch_id: str) -> Optional[List[Dict[str, Any]]]:
-        """Returns the history for a specific branch."""
-        branch_history = self.branches.get(branch_id)
-        return (
-            [thought.model_dump() for thought in branch_history]
-            if branch_history
-            else None
+        """This tool is synchronous only due to internal state and Rich printing."""
+        raise NotImplementedError(
+            "SequentialThinkingTool does not support asynchronous execution."
         )
 
+    def get_history(self) -> List[Dict[str, Any]]:
+        """Returns the full thought history (thread-safe)."""
+        with self._lock:
+            # model_dump creates copies, ensuring thread safety of the returned data
+            return [thought.model_dump() for thought in self._thought_history]
+
+    def get_branch(self, branch_id: str) -> Optional[List[Dict[str, Any]]]:
+        """Returns the history for a specific branch (thread-safe)."""
+        with self._lock:
+            branch_history = self._branches.get(branch_id)
+            # model_dump creates copies
+            return (
+                [thought.model_dump() for thought in branch_history]
+                if branch_history
+                else None
+            )
+
     def clear_history(self):
-        """Clears the thought history and branches."""
-        self.thought_history = []
-        self.branches = {}
-        self.console.print("[bold red]Thought history cleared.[/bold red]")
+        """Clears the thought history and branches (thread-safe)."""
+        with self._lock:
+            self._thought_history = []
+            self._branches = {}
+        # Print confirmation outside the lock
+        if self.verbose:
+            self._console.print("[bold red]Thought history cleared.[/bold red]")
+        else:
+            # Use console's file handle directly
+            print("Thought history cleared.", file=self._console.file, flush=True)
 
 
 # Example usage (for testing purposes)
 if __name__ == "__main__":
+    # Example: Writing non-verbose output to a file
+    # with open("thought_log.txt", "w", encoding="utf-8") as f:
+    #     tool = SequentialThinkingTool(verbose=False, console_kwargs={"file": f, "width": 120})
+
+    # Default verbose output to stderr
     tool = SequentialThinkingTool()
+
+    print("\n--- Running Tool Examples ---")
 
     try:
         result1 = tool.invoke(
@@ -293,7 +348,7 @@ if __name__ == "__main__":
                 "next_thought_needed": True,
             }
         )
-        print("\n--- Tool Result 1 ---")
+        print("\n--- Tool Result 1 (JSON) ---")
         print(json.dumps(result1, indent=2))
 
         result2 = tool.invoke(
@@ -319,7 +374,7 @@ if __name__ == "__main__":
                 },
             }
         )
-        print("\n--- Tool Result 2 ---")
+        print("\n--- Tool Result 2 (JSON) ---")
         print(json.dumps(result2, indent=2))
 
         result3 = tool.invoke(
@@ -347,15 +402,26 @@ if __name__ == "__main__":
                 "remaining_steps": ["Write README", "Package and publish"],
             }
         )
-        print("\n--- Tool Result 3 ---")
+        print("\n--- Tool Result 3 (JSON) ---")
         print(json.dumps(result3, indent=2))
 
-        print("\n--- Full History ---")
+        print("\n--- Full History (JSON) ---")
         print(json.dumps(tool.get_history(), indent=2))
 
     except ToolException as e:
-        print(f"\nTool Error: {e}")
+        print(f"\nTool Error: {e}", file=sys.stderr)
     except Exception as e:
-        print(f"\nGeneral Error: {e}")
+        print(f"\nGeneral Error: {e}", file=sys.stderr)
+    finally:
+        # Ensure the file handle is closed if opened in the example
+        if "file" in tool.console_kwargs and hasattr(tool.console_kwargs["file"], "close"):
+             # Check if it's not sys.stderr/stdout before closing
+             if tool.console_kwargs["file"] not in (sys.stderr, sys.stdout):
+                 try:
+                     tool.console_kwargs["file"].close()
+                     print(f"\nClosed file: {tool.console_kwargs['file'].name}")
+                 except Exception as close_err:
+                     print(f"\nError closing file: {close_err}", file=sys.stderr)
 
-    tool.clear_history()
+        tool.clear_history()
+        print("\n--- Tool Examples Finished ---")
