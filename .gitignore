@@ -29,7 +29,7 @@ dmypy.json
 htmlcov/
 nosetests.xml
 coverage.xml
-org/
+/org/
 
 # IPython Notebook
 .ipynb_checkpoints
