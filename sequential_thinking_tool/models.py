@@ -39,6 +39,10 @@ class ThoughtDataInput(BaseModel):
     previous_steps: Optional[List[StepRecommendation]] = Field(None, description="Steps already recommended")
     remaining_steps: Optional[List[str]] = Field(None, description="High-level descriptions of upcoming steps")
 
+    model_config = {
+        "extra": "forbid"
+    }
+
     # Updated validator using Pydantic v2 style
     @field_validator('revises_thought')
     @classmethod
@@ -68,4 +72,4 @@ class ThoughtDataInput(BaseModel):
 # The input schema is ThoughtDataInput.
 class ThoughtData(ThoughtDataInput):
     """Internal representation, potentially with accumulated state."""
-    pass
+    needs_more_thoughts: Optional[bool] = None # Explicitly add as requested, though inherited

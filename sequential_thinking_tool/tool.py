@@ -1,6 +1,6 @@
 import json
 import sys
-import threading # Added for Lock
+import threading  # Added for Lock
 from typing import Any, Dict, List, Optional, Tuple, Type
 
 from langchain_core.callbacks import (
@@ -8,63 +8,17 @@ from langchain_core.callbacks import (
     CallbackManagerForToolRun,
 )
 from langchain_core.tools import BaseTool, ToolException
-from pydantic import Field, PrivateAttr # Added PrivateAttr
+from pydantic import Field, PrivateAttr  # Added PrivateAttr
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 
-from .models import (
+from .models import (  # ToolRecommendation,
     StepRecommendation,
     ThoughtData,
     ThoughtDataInput,
-    ToolRecommendation,
 )
-
-# Replicate the description from schema.ts
-TOOL_DESCRIPTION = """A detailed tool for dynamic and reflective problem-solving through thoughts.
-This tool helps analyze problems through a flexible thinking process that can adapt and evolve.
-Each thought can build on, question, or revise previous insights as understanding deepens.
-
-When to use this tool:
-- Breaking down complex problems into steps
-- Planning and design with room for revision
-- Analysis that might need course correction
-- Problems where the full scope might not be clear initially
-- Problems that require a multi-step solution
-- Tasks that need to maintain context over multiple steps
-- Situations where irrelevant information needs to be filtered out
-
-Key features:
-- You can adjust total_thoughts up or down as you progress
-- You can question or revise previous thoughts
-- You can add more thoughts even after reaching what seemed like the end
-- You can express uncertainty and explore alternative approaches
-- Not every thought needs to build linearly - you can branch or backtrack
-- Tracks previous recommendations and remaining steps (if provided in thoughts)
-
-Parameters explained (within the input dictionary):
-- thought: Your current thinking step.
-- next_thought_needed: True if you need more thinking.
-- thought_number: Current number in sequence.
-- total_thoughts: Current estimate of thoughts needed.
-- is_revision: (Optional) Boolean indicating if this thought revises previous thinking.
-- revises_thought: (Optional) If is_revision is true, which thought number is being reconsidered.
-- branch_from_thought: (Optional) If branching, which thought number is the branching point.
-- branch_id: (Optional) Identifier for the current branch (if any).
-- needs_more_thoughts: (Optional) If reaching end but realizing more thoughts needed.
-- current_step: (Optional) Current step recommendation object.
-- previous_steps: (Optional) List of previous step recommendation objects.
-- remaining_steps: (Optional) List of high-level descriptions of upcoming steps.
-
-You should:
-1. Start with an initial estimate of needed thoughts, but be ready to adjust.
-2. Feel free to question or revise previous thoughts.
-3. Don't hesitate to add more thoughts if needed, even at the "end".
-4. Express uncertainty when present.
-5. Mark thoughts that revise previous thinking or branch into new paths.
-6. Provide a single, ideally correct answer as the final output of the overall agent process.
-7. Only set next_thought_needed to false when truly done and a satisfactory answer is reached.
-"""
+from .schema import TOOL_DESCRIPTION  # Import from schema
 
 
 class SequentialThinkingTool(BaseTool):
@@ -83,7 +37,7 @@ class SequentialThinkingTool(BaseTool):
                  If False, print plain text output to the console's file handle.
     """
 
-    name: str = "sequential_thinking_tool"
+    name: str = "sequentialthinking_tools"  # Renamed as requested
     description: str = TOOL_DESCRIPTION
     args_schema: Type[ThoughtDataInput] = ThoughtDataInput
     return_direct: bool = False  # Output should be processed by the agent
@@ -102,7 +56,7 @@ class SequentialThinkingTool(BaseTool):
     _lock: threading.Lock = PrivateAttr(default_factory=threading.Lock)
     _thought_history: List[ThoughtData] = PrivateAttr(default_factory=list)
     _branches: Dict[str, List[ThoughtData]] = PrivateAttr(default_factory=dict)
-    _console: Console = PrivateAttr() # Initialized in model_post_init
+    _console: Console = PrivateAttr()  # Initialized in model_post_init
 
     # Allow Console type which isn't directly serializable by Pydantic V1
     # For Pydantic V2, this is less critical but doesn't hurt.
@@ -116,15 +70,14 @@ class SequentialThinkingTool(BaseTool):
             resolved_kwargs["file"] = sys.stderr
         # Disable markup and highlighting if not verbose for simpler output
         if not self.verbose:
-             resolved_kwargs["markup"] = False
-             resolved_kwargs["highlight"] = False
-             # Rich might still add some minimal ANSI codes even with no_color=True,
-             # so direct print might be cleaner for truly plain output if needed.
-             # However, using the console ensures output goes to the configured file.
-             # resolved_kwargs["no_color"] = True # Optional: further reduce formatting
+            resolved_kwargs["markup"] = False
+            resolved_kwargs["highlight"] = False
+            # Rich might still add some minimal ANSI codes even with no_color=True,
+            # so direct print might be cleaner for truly plain output if needed.
+            # However, using the console ensures output goes to the configured file.
+            # resolved_kwargs["no_color"] = True # Optional: further reduce formatting
 
         self._console = Console(**resolved_kwargs)
-
 
     def _format_recommendation(self, step: StepRecommendation) -> Text:
         """Formats a StepRecommendation using Rich."""
@@ -216,7 +169,7 @@ class SequentialThinkingTool(BaseTool):
                         current_previous_steps.extend(last_thought.previous_steps)
                     # Add the last thought's *current* step to the *new* thought's previous_steps
                     if last_thought.current_step:
-                         current_previous_steps.append(last_thought.current_step)
+                        current_previous_steps.append(last_thought.current_step)
 
                 # Assign the accumulated steps to the current thought
                 thought_data.previous_steps = current_previous_steps
@@ -236,7 +189,6 @@ class SequentialThinkingTool(BaseTool):
 
             # --- End Thread-Safe State Update ---
 
-
             # --- Output ---
             if self.verbose:
                 formatted_panel = self._format_thought(thought_data)
@@ -250,16 +202,24 @@ class SequentialThinkingTool(BaseTool):
                 if thought_data.is_revision:
                     output_lines[0] += f" (Revising: {thought_data.revises_thought})"
                 elif thought_data.branch_id:
-                     output_lines[0] += f" (Branch: {thought_data.branch_id} from {thought_data.branch_from_thought})"
+                    output_lines[
+                        0
+                    ] += f" (Branch: {thought_data.branch_id} from {thought_data.branch_from_thought})"
 
                 if thought_data.current_step:
-                    output_lines.append(f"Recommendation: {thought_data.current_step.step_description}")
-                    output_lines.append(f"  Expected Outcome: {thought_data.current_step.expected_outcome}")
+                    output_lines.append(
+                        f"Recommendation: {thought_data.current_step.step_description}"
+                    )
+                    output_lines.append(
+                        f"  Expected Outcome: {thought_data.current_step.expected_outcome}"
+                    )
                     # Add more details if needed for non-verbose
 
                 # Use console's file handle directly for output destination
                 output_str = "\n".join(output_lines)
-                print(output_str, file=self._console.file, flush=True) # Ensure output is written
+                print(
+                    output_str, file=self._console.file, flush=True
+                )  # Ensure output is written
 
             # --- End Output ---
 
@@ -268,8 +228,8 @@ class SequentialThinkingTool(BaseTool):
                 "thought_number": thought_data.thought_number,
                 "total_thoughts": thought_data.total_thoughts,
                 "next_thought_needed": thought_data.next_thought_needed,
-                "branches": branches_keys, # Use state captured after lock release
-                "thought_history_length": history_len, # Use state captured after lock release
+                "branches": branches_keys,  # Use state captured after lock release
+                "thought_history_length": history_len,  # Use state captured after lock release
                 # Pass back potentially updated step info
                 "current_step": (
                     thought_data.current_step.model_dump()
@@ -414,14 +374,16 @@ if __name__ == "__main__":
         print(f"\nGeneral Error: {e}", file=sys.stderr)
     finally:
         # Ensure the file handle is closed if opened in the example
-        if "file" in tool.console_kwargs and hasattr(tool.console_kwargs["file"], "close"):
-             # Check if it's not sys.stderr/stdout before closing
-             if tool.console_kwargs["file"] not in (sys.stderr, sys.stdout):
-                 try:
-                     tool.console_kwargs["file"].close()
-                     print(f"\nClosed file: {tool.console_kwargs['file'].name}")
-                 except Exception as close_err:
-                     print(f"\nError closing file: {close_err}", file=sys.stderr)
+        if "file" in tool.console_kwargs and hasattr(
+            tool.console_kwargs["file"], "close"
+        ):
+            # Check if it's not sys.stderr/stdout before closing
+            if tool.console_kwargs["file"] not in (sys.stderr, sys.stdout):
+                try:
+                    tool.console_kwargs["file"].close()
+                    print(f"\nClosed file: {tool.console_kwargs['file'].name}")
+                except Exception as close_err:
+                    print(f"\nError closing file: {close_err}", file=sys.stderr)
 
         tool.clear_history()
         print("\n--- Tool Examples Finished ---")
